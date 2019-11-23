@@ -83,7 +83,7 @@ https://www.gnu.org/licenses/gpl-3.0.en.html"""
         info.AddDocWriter('Luca Viola')
         info.AddArtist('3AM')
         info.AddTranslator('Luca Viola')
-        wx.adv.AboutBox(info)
+        wx.adv.AboutBox(info,self.frame)
 
     def OnSetIcon(self, path):
         icon = wx.Icon(path)
