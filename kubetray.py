@@ -14,7 +14,7 @@ PATH = os.path.dirname(os.path.realpath(__file__))
 ICON = PATH+'/icon.png'
 VERSION = PATH+'/VERSION'
 
-class TaskBarIcon(wx.adv.TaskBarIcon):
+class Kubetray(wx.adv.TaskBarIcon):
     def __init__(self, frame):
         self.frame = frame
         self.toggle = 0
@@ -120,7 +120,7 @@ def nohup(func):
 def main():
     app = wx.App()
     frame=wx.Frame(None)
-    TaskBarIcon(frame)
+    Kubetray(frame)
     app.MainLoop()
 
 if __name__ == '__main__':
