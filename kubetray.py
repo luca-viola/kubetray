@@ -12,6 +12,7 @@ urllib3.disable_warnings()
 
 PATH = os.path.dirname(os.path.realpath(__file__))
 ICON = PATH+'/icon.png'
+VERSION = PATH+'/VERSION'
 
 class TaskBarIcon(wx.adv.TaskBarIcon):
     def __init__(self, frame):
@@ -69,12 +70,14 @@ Kubetray is distributed under the terms of GPL V3.
 Please refer to the page below to get a copy of the licence.
 
 https://www.gnu.org/licenses/gpl-3.0.en.html"""
+        with open(VERSION, 'r') as version_file:
+            version = version_file.read()
         info.SetIcon(wx.Icon(ICON, wx.BITMAP_TYPE_PNG))
         info.SetName('Kubetray')
-        info.SetVersion('1.0')
+        info.SetVersion(version)
         info.SetDescription(description)
         info.SetCopyright('(C) 2019 Luca Viola')
-        info.SetWebSite('http://www.lucaviola.lv')
+        info.SetWebSite('https://github.com/luca-viola/kubetray')
         info.SetLicence(licence)
         info.AddDeveloper('Luca Viola')
         info.AddDocWriter('Luca Viola')
