@@ -1,3 +1,3 @@
 wxPython
 kubernetes==10.0.1
-urllib3==1.25.4
+urllib3==1.26.5
