@@ -1,127 +1,97 @@
 #!/usr/bin/env python3
 import os
 import sys
-import wx
-import wx.adv
-from functools import partial
-from kubernetes import client, config
-from kubernetes.client import configuration
+import signal
+from kubernetes import config
 import urllib3
+
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("AppIndicator3", "0.1")
+from gi.repository import Gtk, AppIndicator3
 
 urllib3.disable_warnings()
 
-PATH = os.path.dirname(os.path.realpath(__file__))
-ICON = PATH+'/icon.png'
-VERSION = PATH+'/VERSION'
+APPINDICATOR_ID = 'kubetray'
+ICON_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'icon.png')
+VERSION_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'VERSION')
 
-class Kubetray(wx.adv.TaskBarIcon):
-    def __init__(self, frame):
-        self.frame = frame
-        self.toggle = 0
-        wx.adv.TaskBarIcon.__init__(self)
-        self.Bind(wx.EVT_MENU, self.OnQuit, id=wx.ID_EXIT)
-        self.OnSetIcon(ICON)
 
-    def OnContextSelection(self, number, event):
-        global active_index
+class Kubetray:
+    def __init__(self):
+        self.indicator = AppIndicator3.Indicator.new(
+            APPINDICATOR_ID,
+            ICON_PATH,
+            AppIndicator3.IndicatorCategory.APPLICATION_STATUS
+        )
+        self.indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+        self.indicator.set_menu(self.build_menu())
 
-        id_selected = event.GetId()
-        active_index = id_selected 
-        obj = event.GetEventObject()
-        context = obj.GetLabel(id_selected)
-        config.load_kube_config(context=context)
-        os.system("kubectl config use-context "+context+" >/dev/null")
+    def build_menu(self):
+        menu = Gtk.Menu()
 
-    def CreatePopupMenu(self):
-        global context_names,active_index
-
+        # Load kube contexts
         contexts, active_context = config.list_kube_config_contexts()
         if not contexts:
-          print("Cannot find any context in kube-config file.")
-          sys.exit(-1)
-        context_names = [context['name'] for context in contexts]
-        active_index = context_names.index(active_context['name'])
-        
-        menu = wx.Menu()
-        index = 0
-        for name in context_names:
-            item=menu.AppendRadioItem(index,name)
-            menu.Bind(wx.EVT_MENU, partial(self.OnContextSelection, index), item)
-            index = index + 1
-        menu.AppendSeparator()
-        aboutm = wx.MenuItem(menu, wx.ID_ABOUT, 'About..')
-        menu.Bind(wx.EVT_MENU, self.OnAbout, id=aboutm.GetId())
-        menu.Append(aboutm)
+            print("No Kubernetes contexts found.")
+            sys.exit(1)
 
-        menu.AppendSeparator()
-        quitm = wx.MenuItem(menu, wx.ID_EXIT, 'Quit')
-        menu.Bind(wx.EVT_MENU, self.OnQuit, id=quitm.GetId())
-        menu.Append(quitm)
-        menu.Check(active_index,True)
+        self.context_names = [ctx['name'] for ctx in contexts]
+        self.active_index = self.context_names.index(active_context['name'])
+
+        group = None
+        for i, name in enumerate(self.context_names):
+            item = Gtk.RadioMenuItem.new_with_label(group or [], name)
+            if group is None:
+                group = item.get_group()
+            item.connect("toggled", self.on_context_selected, name)
+            if i == self.active_index:
+                item.set_active(True)
+            menu.append(item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        about_item = Gtk.MenuItem(label='About...')
+        about_item.connect("activate", self.on_about)
+        menu.append(about_item)
+
+        quit_item = Gtk.MenuItem(label='Quit')
+        quit_item.connect("activate", self.quit)
+        menu.append(quit_item)
+
+        menu.show_all()
         return menu
 
-    def OnAbout(self,event):
-        info = wx.adv.AboutDialogInfo()
+    def on_context_selected(self, widget, context_name):
+        if widget.get_active():
+            config.load_kube_config(context=context_name)
+            os.system(f"kubectl config use-context {context_name} >/dev/null")
 
-        description = "Kubetray is a Desktop Gui utility to change k8s contexts"
-        licence = """
-Kubetray is distributed under the terms of GPL V3.
+    def on_about(self, _):
+        version = "unknown"
+        if os.path.exists(VERSION_PATH):
+            with open(VERSION_PATH, 'r') as vf:
+                version = vf.read().strip()
 
-Please refer to the page below to get a copy of the licence.
+        dialog = Gtk.MessageDialog(
+            message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK,
+            text="Kubetray - Kubernetes context switcher",
+        )
+        dialog.format_secondary_text(f"Version: {version}\n© 2019 Luca Viola\nGPL v3 Licensed")
+        dialog.run()
+        dialog.destroy()
 
-https://www.gnu.org/licenses/gpl-3.0.en.html"""
-        with open(VERSION, 'r') as version_file:
-            version = version_file.read()
-        info.SetIcon(wx.Icon(ICON, wx.BITMAP_TYPE_PNG))
-        info.SetName('Kubetray')
-        info.SetVersion(version)
-        info.SetDescription(description)
-        info.SetCopyright('(C) 2019 Luca Viola')
-        info.SetWebSite('https://github.com/luca-viola/kubetray')
-        info.SetLicence(licence)
-        info.AddDeveloper('Luca Viola')
-        info.AddDocWriter('Luca Viola')
-        info.AddArtist('3AM')
-        info.AddTranslator('Luca Viola')
-        wx.adv.AboutBox(info,self.frame)
+    def quit(self, _):
+        Gtk.main_quit()
 
-    def OnSetIcon(self, path):
-        icon = wx.Icon(path)
-        self.SetIcon(icon, path)
-
-    def OnQuit(self, event):
-        self.RemoveIcon()
-        wx.CallAfter(self.Destroy)
-        self.frame.Close()
-
-def nohup(func):
-  try:
-    pid = os.fork()
-    if pid > 0:
-      return
-  except OSError as e:
-    sys.stderr.write("fork #1 failed: %d (%s)" % (e.errno, e.strerror))
-    sys.exit(1)
-
-  os.setsid()
-
-  try:
-    pid = os.fork()
-    if pid > 0:
-      sys.exit(0)
-  except OSError as e:
-    sys.stderr.write("fork #2 failed: %d (%s)" % (e.errno, e.strerror))
-    sys.exit(1)
-
-  func()
-
-  os._exit(os.EX_OK)
 
 def main():
-    app = wx.App()
-    frame=wx.Frame(None)
-    Kubetray(frame)
-    app.MainLoop()
+    signal.signal(signal.SIGINT, signal.SIG_DFL)  # Proper Ctrl+C handling
+    Kubetray()
+    Gtk.main()
+
 
 if __name__ == '__main__':
-    nohup(main)
+    main()
+
